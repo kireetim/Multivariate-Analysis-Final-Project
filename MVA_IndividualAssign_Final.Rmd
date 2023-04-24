@@ -1,0 +1,317 @@
+---
+title: "MVA"
+author: "Kireeti Mantrala"
+netid: "sm2594@scarletmail.rutgers.edu"
+output: html_document
+date: "2023-04-17"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(readr)
+library(MVA)
+library(HSAUR2)
+library(GGally)
+library(ggplot2)
+library(ggridges)
+library(ggvis)
+library(factoextra)
+library(SciViews)
+library(scatterplot3d)
+library(car)
+library(lattice)
+library(FactoMineR)
+library(ggfortify)
+library(psych)
+library(ggthemes)
+library(cowplot)
+library(gapminder)
+library(gganimate)
+library(dplyr)
+library(tidyverse)
+library(grid)
+library(gridExtra)
+library(RColorBrewer)
+library(Hotelling)
+library(stats)
+library(biotools)
+library(corrplot)
+library(readr)
+library(NbClust)
+library(cluster)
+library(MASS)
+library(ggplot2)
+library(memisc)
+library(ROCR)
+library(klaR)
+library(leaps)
+library(gvlma)
+
+## The dataset here talks about the Life expectancy and the various factors affecting life expectancy like demographic variables, income composition, mortality rates, immunization, human development index, social and economic factors. 
+## We will try to address the below questions and accordingly perform Multivariate Analysis to draw insights and predictions.
+
+##Questions:
+## 1.	What insights can we draw from the given factors in the dataset for Life Expectancy?
+## 2.	Can we predict life expectancy using these given factors from the dataset?
+
+## Loading the dataset
+
+expect <- data.table::fread("~/Downloads/life1.csv")
+
+## We will get the Scree Plot to understand if we can perform PCA on the given dataset
+
+sapply(expect, function(x) sum(is.na(x)))
+expect <- expect[complete.cases(expect),] 
+sapply(expect, function(x) sum(is.na(x)))
+
+attach(expect)
+#Getting the Correlation between the factors
+cor(expect[,5:22])
+
+expect_pca <- prcomp(expect[,5:22],scale=TRUE)
+
+fviz_eig(expect_pca, addlabels = TRUE)
+
+## Since the percentage is not above 75, we shall not proceed further with PCA and now perform the Factor Analysis to reduce and explore the underlying structure of these set of variables to provide insights into the relationships between different aspects of the Life Expectancy dataset.
+
+```
+
+
+```{r}
+#Factor Analysis
+
+life.pc <- principal(expect[,5:22], nfactors=5, rotate="varimax")
+fa.diagram(life.pc)
+
+## Here after performing Factor Analysis, we can identify the underlying factors that are driving the correlation between the set of variables determining the optimal number of factors to extract from the data.
+
+## RC1 has Schooling, Alcohol and Income Composition of Resources 
+## RC2 factorized Population, Infant Deaths and Under five deaths
+## RC3 has BMI, Diptheria, HepatitisB and Polio
+## RC4 has HIV/AIDS and Adult Mortality
+## RC5 has GDP and Percentage expenditure
+## RC6 only has Total Expenditure
+## RC7 only has Measles
+## RC8 has thinness 5-9 years and thinness 1-19 years along with BMI being inversely related.
+
+## Now we perform Cluster Analysis.
+
+```
+
+
+```{r}
+#Cluster Analysis
+efa_life <- as.data.frame(life.pc$scores)
+efa_life <- efa_life[c(-7,-8)]
+
+## Adding RC6 and RC7 to the new retained dataset
+efa_life$MeaslesT <- expect$Measles
+efa_life$TotalExpenditureM <- expect$Totalexpenditure
+
+# Data Scaling
+matstd_pro <- scale(efa_life)
+
+# Kmeans
+
+fviz_nbclust(matstd_pro, kmeans, method = "gap_stat")
+
+
+fviz_nbclust <- function (x, FUNcluster = NULL, method = c("silhouette", "wss", 
+                                                           "gap_stat"), diss = NULL, k.max = 10, nboot = 100, verbose = interactive(), 
+                          barfill = "steelblue", barcolor = "steelblue", linecolor = "steelblue", 
+                          print.summary = TRUE, ...) 
+{
+  set.seed(123)
+  if (k.max < 2)
+    stop("k.max must bet > = 2")
+  method = match.arg(method)
+  if (!inherits(x, c("data.frame", "matrix")) & !("Best.nc" %in% 
+                                                  names(x))) 
+    stop("x should be an object of class matrix/data.frame or ", 
+         "an object created by the function NbClust() [NbClust package].")
+  if (inherits(x, "list") & "Best.nc" %in% names(x)) {
+    best_nc <- x$Best.nc
+    if (any(class(best_nc) == "numeric") ) 
+      print(best_nc)
+    else if (any(class(best_nc) == "matrix") )
+      .viz_NbClust(x, print.summary, barfill, barcolor)
+  }
+  else if (is.null(FUNcluster)) 
+    stop("The argument FUNcluster is required. ", "Possible values are kmeans, pam, hcut, clara, ...")
+  else if (!is.function(FUNcluster)) {
+    stop("The argument FUNcluster should be a function. ", 
+         "Check if you're not overriding the specified function name somewhere.")
+  }
+  else if (method %in% c("silhouette", "wss")) {
+    if (is.data.frame(x)) 
+      x <- as.matrix(x)
+    if (is.null(diss)) 
+      diss <- stats::dist(x)
+    v <- rep(0, k.max)
+    if (method == "silhouette") {
+      for (i in 2:k.max) {
+        clust <- FUNcluster(x, i, ...)
+        v[i] <- .get_ave_sil_width(diss, clust$cluster)
+      }
+    }
+    else if (method == "wss") {
+      for (i in 1:k.max) {
+        clust <- FUNcluster(x, i, ...)
+        v[i] <- .get_withinSS(diss, clust$cluster)
+      }
+    }
+    df <- data.frame(clusters = as.factor(1:k.max), y = v, 
+                     stringsAsFactors = TRUE)
+    ylab <- "Total Within Sum of Square"
+    if (method == "silhouette") 
+      ylab <- "Average silhouette width"
+    p <- ggpubr::ggline(df, x = "clusters", y = "y", group = 1, 
+                        color = linecolor, ylab = ylab, xlab = "Number of clusters k", 
+                        main = "Optimal number of clusters")
+    if (method == "silhouette") 
+      p <- p + geom_vline(xintercept = which.max(v), linetype = 2, 
+                          color = linecolor)
+    return(p)
+  }
+  else if (method == "gap_stat") {
+    extra_args <- list(...)
+    gap_stat <- cluster::clusGap(x, FUNcluster, K.max = k.max, 
+                                 B = nboot, verbose = verbose, ...)
+    if (!is.null(extra_args$maxSE)) 
+      maxSE <- extra_args$maxSE
+    else maxSE <- list(method = "firstSEmax", SE.factor = 1)
+    p <- fviz_gap_stat(gap_stat, linecolor = linecolor, 
+                       maxSE = maxSE)
+    return(p)
+  }
+}
+
+.viz_NbClust <- function (x, print.summary = TRUE, barfill = "steelblue", 
+                          barcolor = "steelblue") 
+{
+  best_nc <- x$Best.nc
+  if (any(class(best_nc) == "numeric") )
+    print(best_nc)
+  else if (any(class(best_nc) == "matrix") ) {
+    best_nc <- as.data.frame(t(best_nc), stringsAsFactors = TRUE)
+    best_nc$Number_clusters <- as.factor(best_nc$Number_clusters)
+    if (print.summary) {
+      ss <- summary(best_nc$Number_clusters)
+      cat("Among all indices: \n===================\n")
+      for (i in 1:length(ss)) {
+        cat("*", ss[i], "proposed ", names(ss)[i], 
+            "as the best number of clusters\n")
+      }
+      cat("\nConclusion\n=========================\n")
+      cat("* According to the majority rule, the best number of clusters is ", 
+          names(which.max(ss)), ".\n\n")
+    }
+    df <- data.frame(Number_clusters = names(ss), freq = ss, 
+                     stringsAsFactors = TRUE)
+    p <- ggpubr::ggbarplot(df, x = "Number_clusters", 
+                           y = "freq", fill = barfill, color = barcolor) + 
+      labs(x = "Number of clusters k", y = "Frequency among all indices", 
+           title = paste0("Optimal number of clusters - k = ", 
+                          names(which.max(ss))))
+    return(p)
+  }
+}
+
+
+res.nbclust <- efa_life %>% scale() %>% NbClust(distance = "euclidean", min.nc = 2, max.nc = 10, method = "complete", index ="all") 
+fviz_nbclust(res.nbclust, ggtheme = theme_minimal())
+
+
+set.seed(123)
+km.res <- kmeans(matstd_pro, 2, nstart = 25)
+
+fviz_cluster(km.res, data = matstd_pro,
+             ellipse.type = "convex",
+             palette = "jco",
+             ggtheme = theme_minimal())
+
+pam.res <- pam(matstd_pro, 2)
+
+fviz_cluster(pam.res)
+
+## We cannot classify insights for the given factors in the dataset for Life Expectancy because these clusters are overlapping.
+## We will now perform Multiple Regression to understand if we can predict Life Expectancy from our factors from the dataset, answering our second question.
+
+```
+
+
+```{r}
+#Multiple Regression
+sapply(expect, function(x) sum(is.na(x)))
+expect <- expect[complete.cases(expect),]  ## to remove which has null values
+sapply(expect, function(x) sum(is.na(x)))
+expect_x <- subset.data.frame(expect, Year == "2010")
+
+life <- lm(Lifeexpectancy~HepatitisB+Measles+Polio+Diphtheria+HIV_AIDS, data=expect)
+summary(life)
+
+life1 <- lm(Lifeexpectancy~AdultMortality+infantdeaths+Alcohol+BMI+underfivedeaths+percentageexpenditure+Totalexpenditure+GDP+Population+Incomecompositionofresources+Schooling, data=expect)
+summary(life1)
+
+ggpairs(data=mtcars, title="Life Expectancy")
+confint(life,level=0.95)
+confint(life,level=0.95)
+
+#Anova Table
+anova(life)
+vcov(life)
+cov2cor(vcov(life))
+temp <- influence.measures(life)
+plot(life)
+```
+
+
+```{r}
+# Cook's D plot
+
+cutoff <- 4/((nrow(expect)-length(life$coefficients)-2))
+plot(life, which=4, cook.levels=cutoff)
+
+# distribution of studentized residuals
+
+sresid <- studres(life)
+
+hist(sresid, freq=FALSE,
+     main="Distribution of Studentized Residuals")
+xlife<-seq(min(sresid),max(sresid),length=40)
+ylife<-dnorm(xlife)
+lines(xlife, ylife)
+
+
+# Global test of model assumptions
+
+gvmodel <- gvlma(life)
+summary(gvmodel)
+
+life1 <- life
+life2 <- lm(Lifeexpectancy~GDP+Population+Alcohol, data=expect)
+
+# compare models
+anova(life1, life2)
+step <- stepAIC(life, direction="both")
+step$anova # display results
+
+leaps<-regsubsets(Lifeexpectancy~GDP+Population+Alcohol, data=expect,nbest=10)
+# view results
+summary(leaps)
+
+## In conclusion, We can determine the Life Expectancy of a country by the data of Adult Mortality, infant deaths, Alcohol, percentage expenditure, HepatitisB, Measles, BMI 	under five deaths, Polio, Total expenditure,	Diphtheria, HIV/AIDS, GDP, Population, thinness  1-19 years, thinness 5-9 years, Income composition of resources.
+## From our Analysis here, the Life Expectancy of a country is vastly dependent on multiple factors and the Insights we have driven have helped us proceed with further analysis to perform Multiple Regression to predict Life Expectancy from these factors.
+## Hypothetically there are furthermore factors like Immunization, Health Care, Genetics and Environmental Factors too. This Analysis will help us draw a path towards predicting expectancy with these factors and can be used to make equations to consider more factors if needed for other analysis of data.
+
+## Closing Notes:
+## Name: Kireeti Mantrala - sm2594
+## Subject: Multivariate Analysis Final Individual Project
+## Professor: Ronak Parikh
+## Rutgers Business School, Newark
+
+```
+
+
+
